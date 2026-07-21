@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Day 1 — Quote-First Grounding</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<a class="nav-back" href="../index.html">&larr; All lessons</a>
+
+<h1>Day 1 — Quote-First Grounding</h1>
+<p class="subtitle">Twenty minutes from now you'll be able to force Claude to anchor every claim about a long document to a verbatim quote, so it stops inventing details when you feed it a 40-page transcript or a customer JSON export.</p>
+
+<h2>Why this matters</h2>
+<p>When you paste a long call transcript or a big environment export and ask "what did the customer commit to?", the failure isn't that Claude refuses — it's that it confidently paraphrases something that's <em>almost</em> in the document but not quite. A due date shifts by a week, an owner gets swapped, a "we'll consider it" becomes "they agreed." You don't catch it because the answer reads plausibly, and now a wrong action item is in Linear. The longer the context, the worse the drift: relevant facts get diluted by everything else in the window.</p>
+
+<h2>The mechanic</h2>
+<p>Split the work into two forced phases in one prompt: first Claude extracts <em>verbatim</em> quotes into a scratchpad, then it answers using only those quotes. Quoting first pulls the relevant needles out of the haystack before reasoning starts, and the quotes become an audit trail you can spot-check.</p>
+<pre><code>&lt;document&gt;
+{{PASTE FULL TRANSCRIPT HERE}}
+&lt;/document&gt;
+
+First, in &lt;evidence&gt; tags, extract every verbatim quote from the
+document that states a commitment, a date, an owner, or a blocker.
+Copy the text exactly — do not paraphrase. If none exist, write "none".
+
+Then, in &lt;answer&gt; tags, list the customer's commitments. Every line
+must cite one of the quotes above. If a commitment is implied but not
+stated in a quote, put it under a separate "Inferred (unverified)"
+heading so I can see it's not grounded.</code></pre>
+<p>Why each piece is there: the <code>&lt;document&gt;</code> wrapper lets Claude tell "the source" apart from "the instructions." The <em>verbatim</em> constraint plus "do not paraphrase" blocks the drift — a copied quote can't silently mutate a date. Naming the categories (commitment / date / owner / blocker) focuses extraction instead of dumping the whole doc back. And the "Inferred (unverified)" bucket is the key move: it gives Claude a legitimate place to put soft signals, so it stops smuggling them into the grounded list.</p>
+
+<h2>The upgrade over the naive version</h2>
+<p><strong>Before</strong> — one-shot ask:</p>
+<pre><code>Here's the transcript. What did the customer commit to?</code></pre>
+<p>Claude answers in one pass, blending real quotes, inference, and filler with no way to tell which is which. To verify, you re-read the whole transcript — so you've saved nothing.</p>
+<p><strong>After</strong> — quote-first (the prompt above). You get an <code>&lt;evidence&gt;</code> block of exact quotes and an answer where each item points to one. Verifying means glancing at four or five quotes, not re-reading 40 pages. Anything ungrounded is quarantined under "Inferred," which is exactly the stuff worth a human double-check.</p>
+
+<h2>Try it now (10 minutes)</h2>
+<p>Grab your most recent real customer call transcript or a long email thread — something 1,000+ words where you already know the true answer. Paste it into the prompt above and run it in Claude. A successful output has an <code>&lt;evidence&gt;</code> block where every quote is findable with Ctrl-F in the source (copy one and check), and an <code>&lt;answer&gt;</code> where nothing in the grounded section is missing its citation. The tell that it worked: at least one item you'd have accepted from a one-shot answer now correctly sits under "Inferred (unverified)." That's a wrong action item you didn't create.</p>
+
+<h2>Apply it to my workflow</h2>
+<p>In transcript-to-Linear ticket generation, run the quote-first pass before drafting issues so each ticket carries the exact customer sentence that justifies it — reviewers approve faster and scope creep drops. When auditing a Plenful customer JSON export, ask for verbatim query names and table references before any summary, so the overview never cites an automation that doesn't exist. And in escalation write-ups, quote-first turns "the customer is blocked on X" into a defensible claim with the line that proves it — which matters when eng pushes back.</p>
+
+<h2>One-line bookmark</h2>
+<p class="bookmark">Make Claude quote before it concludes: verbatim evidence first, answer second, inference quarantined.</p>
+
+<h2>Sources</h2>
+<ul>
+<li><a href="https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices">Prompting best practices — Claude Platform Docs</a> (quote-first for long documents; XML section tagging)</li>
+<li><a href="https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents">Effective context engineering for AI agents — Anthropic Engineering</a> (context dilution in long windows; minimal high-signal context)</li>
+</ul>
+
+<footer class="site">Day 1 &middot; generated 2026-07-20</footer>
+</body>
+</html>

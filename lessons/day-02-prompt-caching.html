@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Day 2 — Prompt Caching Breakpoints</title><link rel="stylesheet" href="../style.css"></head><body>
+<a class="nav-back" href="../index.html">&larr; All lessons</a>
+<h1>Day 2 — Prompt Caching Breakpoints</h1>
+<p class="subtitle"><em>By the end of this you'll be able to make a batch API script cheaper and faster by caching the static prefix — and know the one ordering mistake that quietly disables it.</em></p>
+
+<h2>Why this matters</h2>
+<p>You wire up a script that classifies 4,000 support tickets, each call carrying the same 18k-token schema and instruction block in front of one short ticket. It runs, it's slow, and the bill is brutal — because you re-sent that identical prefix 4,000 times. Worse: if you glue the changing ticket text <em>before</em> the static schema in one big string, the cached prefix never matches from one call to the next, so you pay the write premium on every request and get zero hits. The technique is only worth it if the cached part is byte-for-byte identical across calls, and one careless concatenation breaks that.</p>
+
+<h2>The mechanic</h2>
+<p>Prompt caching lets Claude store a prefix of your request and reuse it. You mark the end of the cacheable region with <code>cache_control: {"type": "ephemeral"}</code> on a content block. The cache spans the whole prompt in a fixed order — <strong>tools, then system, then messages</strong> — up to and including that block. Everything before the breakpoint is cached; everything after stays dynamic. You get up to four breakpoints per request; a hit requires the breakpoint and everything before it to be identical. Default TTL is five minutes, <em>refreshed on every read</em>, so a steady stream of calls keeps the prefix hot indefinitely (a 1-hour tier exists at extra cost).</p>
+<pre><code>import anthropic
+client = anthropic.Anthropic()
+
+SCHEMA = open("340b_table_schema.md").read()   # ~18k tokens, identical every call
+
+resp = client.messages.create(
+    model="claude-sonnet-5",
+    max_tokens=512,
+    system=[
+        {"type": "text", "text": "Classify each Plenful ticket by workflow area."},
+        {
+            "type": "text",
+            "text": SCHEMA,
+            "cache_control": {"type": "ephemeral"}   # &lt;-- breakpoint: everything up to here is cached
+        },
+    ],
+    messages=[
+        {"role": "user", "content": ticket_text},    # dynamic, comes AFTER the breakpoint
+    ],
+)
+print(resp.usage.cache_creation_input_tokens,      # &gt; 0 only on the first (write) call
+      resp.usage.cache_read_input_tokens)          # &gt; 0 on every hit afterward</code></pre>
+<p>The breakpoint sits on the <em>last static block</em> — the schema — not on the instruction line above it, because caching includes everything up to the tagged block. The ticket lives in <code>messages</code>, after the cached region, so it varies freely without disturbing the prefix. The two <code>usage</code> counters are your proof: the first call reports <code>cache_creation_input_tokens</code> (you paid ~25% over base to write), and every call after reports <code>cache_read_input_tokens</code> billed at roughly a tenth of the base input price.</p>
+
+<h2>The upgrade over the naive version</h2>
+<p><strong>Before:</strong> <code>system = INSTRUCTIONS + SCHEMA + "\n\nTicket: " + ticket_text</code> — one string, no <code>cache_control</code>. Because the ticket changes every call and sits inside the prefix, there is nothing stable to cache; you re-send and re-pay for 18k tokens 4,000 times.</p>
+<p><strong>After:</strong> the static schema is its own block tagged with <code>cache_control</code>, and the ticket moved into <code>messages</code> behind it. Call one writes the prefix; calls two through 4,000 read it. Same output, a fraction of the cost, and lower latency because Claude skips re-processing the prefix. The only change was <em>where the changing text lives</em> relative to the breakpoint.</p>
+<p>PHI note: keep the cached prefix to non-PHI schema and instructions, and put the per-record content — which may contain PHI — after the breakpoint, sending only the minimum each call needs. Caching a stable prefix and minimizing dynamic PHI pull in the same direction.</p>
+
+<h2>Try it now (10 minutes)</h2>
+<p>Take any script where you call the API in a loop with a big fixed system prompt (a classifier, a transcript-to-Linear extractor, a PQL generator that ships the table schema). Split <code>system</code> into a list of two blocks — instructions, then the large static context — and put <code>cache_control: {"type": "ephemeral"}</code> on the second. Run the loop twice over the same two records and print <code>resp.usage.cache_creation_input_tokens</code> and <code>resp.usage.cache_read_input_tokens</code>. Success looks like: creation tokens are non-zero only on the first call, and read tokens are non-zero (≈ your prefix size) on every call after. If reads stay at zero, something dynamic slipped in front of the breakpoint — find it.</p>
+
+<h2>Apply it to my workflow</h2>
+<p>Batch ticket triage: the workflow-classification prompt and taxonomy are identical across every ticket in a run — cache them once, pay per-ticket only for the ticket. Transcript-to-Linear extraction: the extraction rubric and team/owner conventions are the stable prefix; the transcript is the dynamic tail. Customer-environment Q&amp;A scripts: the 340B schema reference and query-style guide are a fixed prefix you can keep hot across a whole interactive session, so each follow-up question only bills for the question.</p>
+
+<h2>One-line bookmark</h2>
+<p class="bookmark">Put everything that never changes first, drop one <code>cache_control</code> breakpoint after it, and keep the varying text strictly behind that line.</p>
+
+<h2>Sources</h2>
+<ul>
+<li><a href="https://platform.claude.com/docs/en/build-with-claude/prompt-caching">Prompt caching — Claude Platform Docs</a> ordering (tools→system→messages), 4 breakpoints, 5-min TTL refreshed on read, exact-prefix matching</li>
+<li><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching">Tool use with prompt caching — Claude Platform Docs</a> placing <code>cache_control</code> on the last tool; tool_choice/image changes invalidate the cache</li>
+<li><a href="https://claude.com/blog/lessons-from-building-claude-code-prompt-caching-is-everything">Lessons from building Claude Code: Prompt caching is everything — Anthropic</a> why a hot, stable prefix dominates agentic cost</li>
+</ul>
+<footer class="site">Day 2 &middot; generated 2026-07-21</footer>
+</body></html>
