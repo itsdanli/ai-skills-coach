@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Day 3 — Progressive Disclosure in Skills</title><link rel="stylesheet" href="../style.css"></head><body>
+<a class="nav-back" href="../index.html">&larr; All lessons</a>
+<h1>Day 3 — Progressive Disclosure in Skills</h1>
+<p class="subtitle"><em>By the end of this you'll be able to split a bloated SKILL.md into a lean core plus reference files, so Claude only loads the rare-case detail when a request actually needs it.</em></p>
+
+<h2>Why this matters</h2>
+<p>Skills load in three tiers. Every installed skill's <code>name</code> and <code>description</code> sit in context from session start (~100 tokens each). The full SKILL.md body loads only when the skill activates. Reference files load only if Claude decides it needs them. If you write one long SKILL.md that inlines every edge case — the full function catalog, every historical customer quirk, the rare diff-mode flow — then a trivial ask like "what formula for this column" drags the entire multi-thousand-token body into context anyway, because activation loads the whole body regardless of which part of the request needs it. That's context spent on material irrelevant to the actual question, crowding out room for the real customer data the skill is supposed to reason about.</p>
+
+<h2>The mechanic</h2>
+<p>Keep SKILL.md's frontmatter (<code>name</code>, <code>description</code>) tight — name lowercase-hyphenated matching the folder, under 64 characters; description under 1,024 characters stating both what the skill does and when to trigger it, since that's the only content loaded for every skill at every session start. Keep the body itself under roughly 500 lines / 5,000 tokens, covering only what's true on every activation. Anything needed only for a subset of cases goes in a separate file, referenced from the body by a plain-language pointer sentence — Claude reads that file only when the request matches the condition in the pointer.</p>
+<pre><code>---
+name: plenful-pql-writer
+description: Generate or modify PQL formulas for Plenful table columns —
+  type columns, tag flattening, conditional flags, date stamping. Use when
+  the user asks what formula to put on a column, references PQL, or pastes
+  a formula with {Curly Brace} column syntax.
+---
+
+# Plenful PQL Writer
+
+Write the formula directly using {Column Name} references. Cover the three
+common cases inline: type-column classification, tag flattening, and
+conditional flags.
+
+For anything beyond a single-column formula — nested conditionals across
+tables, JSON extraction with fallback logic, or the full function
+reference — read reference.md before writing the formula.</code></pre>
+<p>The pointer sentence is doing the real work: it names the exact trigger condition ("nested conditionals," "JSON extraction with fallback," "full function reference") so Claude can match a request against it and decide whether to open <code>reference.md</code>. For the majority of asks — the three common cases covered inline — Claude never touches that file, so the 90% case stays cheap while the 10% case still has full depth available on demand.</p>
+
+<h2>Common failure modes</h2>
+<p><strong>1. Vague pointer, no trigger condition.</strong> "See reference.md for more" gives Claude nothing to match against, so it either always opens the file (defeating the point) or never does (leaving the rare case unhandled). Name the specific scenario that should trigger the read.</p>
+<p><strong>2. Description doing double duty as documentation.</strong> Cramming implementation detail into the 1,024-character description (which loads for every skill at every session start) instead of the body wastes the cheapest tier on content that belongs in the more expensive one.</p>
+<p><strong>3. Splitting by file type instead of by frequency.</strong> Moving content to a reference file only helps if that content is rarely needed. Splitting off something used on nearly every activation just adds a guaranteed extra file read with no savings — progressive disclosure pays off on the skew between common and rare cases, not on file organization for its own sake.</p>
+
+<h2>Try it now (10 minutes)</h2>
+<p>Open one of your longer skills — <code>generate-340b-physical-environment</code> or <code>understand-plenful-environment</code> are good candidates. Count the lines in SKILL.md. Find the section that only applies to a subset of runs (diff mode with <code>--prev</code>, or MFP/MTF/835 overlay detail that only a few customers have). Cut that section into a new <code>reference.md</code> in the same folder, and replace it in SKILL.md with one sentence naming exactly when to read it — e.g., "If the customer export includes an MFP overlay, read mfp-reference.md before summarizing the build." Success looks like: SKILL.md drops well under its original length, the common-case instructions are untouched, and the pointer sentence names a condition specific enough that you could tell, from a real request, whether it should fire.</p>
+
+<h2>Apply it to my workflow</h2>
+<p><strong>generate-340b-physical-environment:</strong> the diff-mode (<code>--prev</code>) instructions run on a minority of invocations — move them out, keep the standard SQL-extraction path inline. <strong>understand-plenful-environment:</strong> MFP overlay detail only matters for customers who have it — split it so a plain 340B walkthrough doesn't drag in MFP-specific reasoning. <strong>tcs-scrum-generator:</strong> the five-emoji status rubric is used every run and stays inline; edge cases like multi-team tickets or stale carryover thresholds are rare enough to push into a reference file.</p>
+
+<h2>One-line bookmark</h2>
+<p class="bookmark">Keep SKILL.md to what's true on every activation; push rare-case detail into a reference file Claude only opens when the request actually names that case.</p>
+
+<h2>Sources</h2>
+<ul>
+<li><a href="https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills">Equipping agents for the real world with Agent Skills — Anthropic Engineering</a> progressive disclosure as the core design principle; PDF skill's reference.md/forms.md example</li>
+<li><a href="https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview">Agent Skills — Claude Platform Docs</a> three-tier loading (name/description at startup, body on activation, reference files on demand); frontmatter constraints</li>
+<li><a href="https://github.com/anthropics/skills/blob/main/skills/skill-creator/SKILL.md">skill-creator SKILL.md — anthropics/skills</a> official reference implementation of the split-body-and-reference-file pattern</li>
+</ul>
+<footer class="site">Day 3 &middot; generated 2026-07-22</footer>
+</body></html>
